@@ -47,9 +47,7 @@ __global__ void spmat_vec_impl(const board_gpu * const boards, const uint32_t * 
         res += __ldg(x + toBase3(pbe.me, pbe.op, base3) + offset[i]);
       }
     }
-    res += mobility_count(bd) * x[offset[patterns]];
-    res += mobility_count(pass(bd)) * x[offset[patterns]+1];
-    res += x[offset[patterns]+2];
+    res += x[offset[patterns]];
     b[index] = res;
     index += blockDim.x * gridDim.x;
   }
@@ -62,8 +60,6 @@ __global__ void trans_spmat_vec_impl(const board_gpu * const boards, const uint3
   int id = threadIdx.x;
   for (int k = id; k < buffer_size; k += blockDim.x) x_s[k] = 0;
   __syncthreads();
-  double me_sum = 0;
-  double op_sum = 0;
   double const_sum = 0;
   while (index < n) {
     board_gpu bd = boards[index];
@@ -84,8 +80,6 @@ __global__ void trans_spmat_vec_impl(const board_gpu * const boards, const uint3
         }
       }
     }
-    me_sum += mobility_count(bd) * b_value;
-    op_sum += mobility_count(pass(bd)) * b_value;
     const_sum += b_value;
     index += blockDim.x * gridDim.x;
   }
@@ -94,24 +88,18 @@ __global__ void trans_spmat_vec_impl(const board_gpu * const boards, const uint3
     atomicAdd(x + k + offset[patterns_global], x_s[k]);
   }
   int i = blockDim.x / 2;
-  __shared__ double psum[threadPerBlock][3];
-  psum[id][0] = me_sum;
-  psum[id][1] = op_sum;
-  psum[id][2] = const_sum;
+  __shared__ double psum[threadPerBlock];
+  psum[id] = const_sum;
   __syncthreads();
   while (i) {
     if (id < i) {
-      psum[id][0] += psum[id + i][0];
-      psum[id][1] += psum[id + i][1];
-      psum[id][2] += psum[id + i][2];
+      psum[id] += psum[id + i];
     }
     __syncthreads();
     i /= 2;
   }
   if (id == 0) {
-    atomicAdd(x + offset[patterns], psum[0][0]);
-    atomicAdd(x + offset[patterns] + 1, psum[0][1]);
-    atomicAdd(x + offset[patterns] + 2, psum[0][2]);
+    atomicAdd(x + offset[patterns], psum[0]);
   }
 }
 
@@ -302,7 +290,7 @@ __host__ thrust::host_vector<double> CGLSmethod(const SpMat &mat, const thrust::
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
   thrust::device_vector<double> b_dev = b;
-  thrust::device_vector<double> r(offset_h[patterns]+3, 0.0);
+  thrust::device_vector<double> r(offset_h[patterns]+1, 0.0);
   cudaEventRecord(start, 0);
   trans_spmat_vec(mat, r, b_dev);
   cudaEventRecord(stop, 0);
@@ -310,7 +298,7 @@ __host__ thrust::host_vector<double> CGLSmethod(const SpMat &mat, const thrust::
   float elapsed_time;
   cudaEventElapsedTime(&elapsed_time, start, stop);
   std::cerr << "trans_spmat_vec: " << elapsed_time << "ms" << std::endl;
-  thrust::device_vector<double> x(offset_h[patterns]+3, 0.0);
+  thrust::device_vector<double> x(offset_h[patterns]+1, 0.0);
   thrust::device_vector<double> d = b_dev;
   thrust::device_vector<double> p = r;
   thrust::device_vector<double> t(mat.n, 0.0);
