@@ -12,7 +12,7 @@ clean:
 	nvcc -cubin -arch=sm_61 -std=c++11 -O2 $<
 
 %.o : %.cpp
-	g++-5 -c -o $@ -std=c++14 -march=native -mtune=native -O2 -Wall -Wextra $<
+	g++-6 -c -o $@ -std=c++14 -march=native -mtune=native -O2 -Wall -Wextra $<
 
 solve.o: get_input.hpp board_gpu.cuh
 get_input.o: get_input.hpp board.hpp subboard.hpp
